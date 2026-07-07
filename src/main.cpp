@@ -1,36 +1,36 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 
-
 // Konstanten des ESP-Verkabelung-Ultrasonic-Sensor JSP-SR04T-V33
 const int echoPin = 5;
 const int trigPin = 4;
 
 // Konstanten des JSP-SR04T-Ultraschall-Sensors
-const uint distance_deadzone = 22;  // Deadzone des Sensors (bei dem Ultraschallsensor von JSN-SR04T ists wohl 22cm)
+const unsigned int distance_deadzone = 22;  // Deadzone des Sensors (bei dem Ultraschallsensor von JSN-SR04T ists wohl 22cm)
 const long max_TOF_sens = 30000; // grenze des Sensors (maximale Mess-Reichweite in Mikrosekunden)
 
 // Konstanten der Installation in Essencia Wassertank Sensor. Angaben in Zentimeter
-const uint distance_max_depth_watertank = 150; // maximaler, sinnvoller zu messender Wert zwischen Sensor und Tankboden (bzw.) der Wassertank-Tiefe (bis zum Sensor)
-const uint height_watertank_0percent = 10;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
-const uint height_watertank_100percent = 120; // vom Boden, 140cm (in Essencia) ist der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
-const uint distance_watertank_0percent = height_watertank_100percent-height_watertank_0percent; // 140-10 = 130cm
-const uint distance_watertank_100percent = height_watertank_100percent; // 140cm
+const unsigned int distance_max_depth_watertank = 150; // maximaler, sinnvoller zu messender Wert zwischen Sensor und Tankboden (bzw.) der Wassertank-Tiefe (bis zum Sensor)
+const unsigned int height_watertank_0percent = 10;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
+const unsigned int height_watertank_100percent = 120; // vom Boden, 140cm (in Essencia) ist der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
+const unsigned int distance_watertank_0percent = height_watertank_100percent-height_watertank_0percent; // 140-10 = 130cm
+const unsigned int distance_watertank_100percent = height_watertank_100percent; // 140cm
 
-const uint liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
+const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
 
 
 bool toggle_var = true;
 unsigned long lastTestTriggerTime = 0;
+String text_string = ""; // Variable für Textausgabe deklariert
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
 
-func percentage_watertank (uint distance) //return-value geht hier wie?
+int percentage_watertank (unsigned int distance) 
 {
   long percent = ( distance / distance_watertank_100percent );
-  return percent
-};
+  return percent; 
+} 
 
 void setup() {
   Serial.begin(115200);
@@ -62,15 +62,16 @@ void loop() {
   
   // if out of range, sonderbehandlung: // auf gefiltertem wert
     // if out of range, dead-zone Sensor (Tank Full?)
-    text_string = "Sensor Deadzone (Closer 22cm). If Tank full, then okey"
+    text_string = "Sensor Deadzone (Closer 22cm). If Tank full, then okey"; 
 
     
     // if out of range, too far away, error
     text_string = "detected Range to far";
 
-  if out_of_range(distance) // Funktion muss noch definiert werden.
+  if (distance > distance_max_depth_watertank) 
   {
-    long distance_filtered = (distance_filtered/9*10) + distance*(1/10);
+    long distance_filtered = 0; 
+    distance_filtered = (distance_filtered/9*10) + distance*(1/10);
   }
     
   // TODOs:
@@ -93,13 +94,13 @@ void loop() {
       u8g2.print("STATUS: TIMEOUT!");
       u8g2.setCursor(0, 55);
       u8g2.print("Sensor unplugged?");
-    } else {
+    } 
+    else {
       u8g2.setCursor(0, 35);
       u8g2.print("STATUS: OKEY");
-      
       u8g2.setCursor(0, 55);
-      toggle_var = false; // für testzwecke
-
+      toggle_var = false ;
+      
       if (toggle_var == true) {
         u8g2.print("UltraSonicTOF: ");
         u8g2.print(duration);

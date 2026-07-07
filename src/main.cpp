@@ -12,9 +12,11 @@ const long max_TOF_sens = 30000; // grenze des Sensors (maximale Mess-Reichweite
 // Konstanten der Installation in Essencia Wassertank Sensor. Angaben in Zentimeter
 const unsigned int distance_max_depth_watertank = 150; // maximaler, sinnvoller zu messender Wert zwischen Sensor und Tankboden (bzw.) der Wassertank-Tiefe (bis zum Sensor)
 const unsigned int height_watertank_0percent = 10;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
-const unsigned int height_watertank_100percent = 120; // vom Boden, 140cm (in Essencia) ist der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
-const unsigned int distance_watertank_0percent = height_watertank_100percent-height_watertank_0percent; // 140-10 = 130cm
-const unsigned int distance_watertank_100percent = height_watertank_100percent; // 140cm
+const unsigned int height_watertank_100percent = 120; // vom Boden, 120cm (in Essencia) ist der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
+
+// HIER GEÄNDERT: Berechnung angepasst, um den realen Sensorabstand zu reflektieren
+const unsigned int distance_watertank_0percent = distance_max_depth_watertank - height_watertank_0percent; // 150 - 10 = 140cm Abstand zum Sensor bei leerem Tank
+const unsigned int distance_watertank_100percent = distance_max_depth_watertank - height_watertank_100percent; // 150 - 120 = 30cm Abstand zum Sensor bei vollem Tank
 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
@@ -98,9 +100,10 @@ void loop() {
     else {
       u8g2.setCursor(0, 35);
       u8g2.print("STATUS: OKEY");
-      u8g2.setCursor(0, 55);
-      toggle_var = false ;
       
+      u8g2.setCursor(0, 55);
+      toggle_var = false; // true wäre für Mess- und Testzwecke. Kann irgendwann ganz entfernt werden, wenn nicht benötigt.
+
       if (toggle_var == true) {
         u8g2.print("UltraSonicTOF: ");
         u8g2.print(duration);

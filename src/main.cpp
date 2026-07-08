@@ -20,6 +20,15 @@ const unsigned int distance_watertank_100percent = distance_max_depth_watertank 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
 
+const enum SensorState = 
+{
+  0 = "okey"; // all good. Sensor fine?
+  1 = "deadzone (too close)"; // waterlevel is close to sensor. Sensor-Deadzone is 22cm.
+  2 = "deeper than tank depth" // detected depth is deeper then the actual water-tank-depth.
+  3 = "deadzone (too far or Sensor unplugged)" // distanz too far (greater then 2,5 meters). or Sensor fully unplugged. Or Sensor fully covers (not able to send and receive something)
+  4 = "high drift" // too much sensor-drift (open/closing lit or sensor fallen apart)
+  5 = "init" // (restart, no valid measure yet)
+};
 
 bool toggle_var = true;
 unsigned long lastTestTriggerTime = 0;

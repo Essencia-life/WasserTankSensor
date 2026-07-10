@@ -26,15 +26,19 @@ enum SensorState {
   STATE_DEADZONE,               // Kinda okey. waterlevel is close to sensor. Sensor-Deadzone is <22cm...3cm?.
   STATE_DRIFT_ERROR,            // too much sensor-drift in short time (did someone opening/closing the lit or did sensor fallen apart)
   STATE_INIT,                   // (at restart, no valid measure yet)
-  STATE_NEEDS_SERVICE,          // Sensor and System needs manual Service or Reset (unplug power (USB-C-Charger/Powersupply), wait 1 min, replug it. Or Search for further failures, if this did not help)
-  STATE_BELOW_PUMP_RESTART_LEVL,// Usually pump would have started to pump more water in again, but waterlevel is below this level already
+  //STATE_NEEDS_SERVICE,          // Sensor and System needs manual Service or Reset (unplug power (USB-C-Charger/Powersupply), wait 1 min, replug it. Or Search for further failures, if this did not help)
+      // NEEDS SERVICE als status obsolet, weil INIT dann aufleuchtet. Und wenn Init mehr als x-Minuten beim Empfänger registriert wird. dann brauchts service. Sonst darf das system sich hier selbst heilen.
+  //STATE_BELOW_PUMP_RESTART_LVL, // Usually pump would have started to pump more water in again, but waterlevel is below this level already
+      // dann gäbe es auch ein "above pump stop level".
+      // und generell wären die dann alle okey. Und irgendwie könnte man die pumprestartlevel vielleicht anderwo hinterlegen?!
+  STATE_OUT_OF_RANGE,           // happens when lit opened, waterlevel seems to be deeper then the tank actually is
 };
 
 
 bool toggle_var = true;
-unsigned long lastTestTriggerTime = 0;
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
+SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 0.0;  // Globaler Filterwert
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 // float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
@@ -76,14 +80,17 @@ void loop() {
 
   if (duration == 0) {
     // Sensor somehow disconnected? not sensing anymore!
+    currentSensorState = STATE_TIMEOUT;
     SensorStatus = "Error (Timeout)";
     SensorTextPrint = "Sensor Plugged?";
   } else if (distance <= distance_deadzone) {
     // if out of range, dead-zone Sensor (Tank Full?)
+    currentSensorState = STATE_DEADZONE;
     SensorStatus = "OK (Min. Distance)";
-    SensorTextPrint = "dist. > 22cm. If Tank full, then okey"; 
+    SensorTextPrint = "dist>22cm. If Tank full,is ok"; 
   } else if (distance > distance_max_depth_watertank) {
     // if out of distance, too far away, error
+    currentSensorState = STATE_OUT_OF_RANGE;
     SensorStatus = "Error (> Max. Distance)";
     SensorTextPrint = "dist. > 150cm";
   } else if ( abs(distance/distance_filtered-1.0)>0.05 ) 
@@ -91,19 +98,26 @@ void loop() {
     // Filter for opening Lit to have a look.
     // max accepted change 5% / cycle
     // would it be better to filter this later? on collected data?
+    currentSensorState = STATE_DRIFT_ERROR;
     SensorStatus = "Error (high Sens drift)";
     SensorTextPrint = "Lit Opened?";
-  } else {
-    SensorStatus = "OK (-:";
-
-    // Lowpass-Filter generell integrieren (90% Altwert, 10% Neuwert)
-    if (is_first_run) {
+  } else if ( distance < distance_max_depth_watertank && distance > distance_deadzone ) // Also Sensor innerhalb der normalen, erwarteten Arbeitsbedingungen
+    {
+    if ( currentSensorState == STATE_INIT ) 
+    {// Lowpass-Filter (90% Altwert, 10% Neuwert)
+    // erster Startup Filterwert direkt setzten (Init)
       distance_filtered = distance;
       is_first_run = false;
     } else {
       distance_filtered = (distance_filtered * 0.9) + (distance * 0.1);
     }
+    currentSensorState = STATE_OK;
+    SensorStatus = "OK :-)"; 
     SensorTextPrint = (distance); // funktioniert das hier? distance is ja float Und SensorTextPrint ein String...?
+  } else {
+    currentSensorState = STATE_INIT; // Ist doch wie init...
+    SensorStatus = " ... starting up";
+    SensorTextPrint = "lit closed? cable conected?";
   }
     
   
@@ -111,13 +125,19 @@ void loop() {
   // TODOs:
   // Lora aus Chat von Steffen integrieren
     // Data to send via Lora:
-    // SensorState
-    // WaterTankLevel (or Liters?)
+      // currentSensorState (Type ENUM SensorState)
+      // WaterTankLevel (or Liters?) ()
   // Architektur-Bild zeichnen Sensor -> JSN -> ESP -> ESP -> Cloud? -> Telegramm? bzw. was sagt Steffen dazu?
   
   // Wasserstand:
   // vermutlich ist jetzt das meiste integriert.
   // Tests (Restart Sender, Restart Empfänger)
+  // Wenn Restart Wassersensor, dann wird neu aufintegriert (Verbrauch vom Tag)
+      // Empfänger schaut ob integrierter Tageswert? oder forlaufend Integrierendes? (Überlaufendes) kleiner als letzter Wert ist?
+      // Wenn Überlauf und Reset gültig waren (z.B. binnen erwarteten 100 Litern) dann wird überlauf vom Sender beim Empfänger ernstgenommen
+      // Wenn Überlauf unerwartet ist, dann wird von einem Restart vom Sender ausgegangen und neu, fortlaufend aufaddiert.
+      // Empfänger kennt Tageszeit/Uhrzeit
+  // Wenn Restart Empfänger, dann ?? (erstmal Tageswerte für Verbrauch verloren?) Oder man könnte sie sich aus der Cloud/USB-Stick oder so holen.
 
   // Wasserverbrauch
   // Bei eingeschaltener Pumpe UND Ablauf, wird die Differenz bzw. der Verbrauch währenddessen nicht erfasst. Wäre es sinnvoll "bei steigendem Wasserspiegel" den vorherigen Wasserverbrauch zu verlängern?

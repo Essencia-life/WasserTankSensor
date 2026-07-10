@@ -39,7 +39,7 @@ bool toggle_var = true;
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
-float distance_filtered = 0.0;  // Globaler Filterwert
+float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 // float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
 
@@ -78,7 +78,7 @@ void loop() {
   long duration = pulseIn(echoPin, HIGH, max_TOF_sens);
   long distance = duration * 0.034 / 2;
 
-  if (duration == 0) {
+  if (distance == 0) {
     // Sensor somehow disconnected? not sensing anymore!
     currentSensorState = STATE_TIMEOUT;
     SensorStatus = "Error (Timeout)";
@@ -92,8 +92,8 @@ void loop() {
     // if out of distance, too far away, error
     currentSensorState = STATE_OUT_OF_RANGE;
     SensorStatus = "Error (> Max. Distance)";
-    SensorTextPrint = "dist. > 150cm";
-  } else if ( abs(distance/distance_filtered-1.0)>0.05 ) 
+    SensorTextPrint = "dist. > 150cm"; // SensorTextPrint = "dist. > int2str(distance_max_depth_watertank) cm".
+  } else if ( ( abs( distance/distance_filtered - 1.0 ) > 0.05 ) && (is_first_run == false) ) 
     {  
     // Filter for opening Lit to have a look.
     // max accepted change 5% / cycle
@@ -157,7 +157,8 @@ void loop() {
 
     u8g2.setCursor(0, 55);
     toggle_var = false; // für testzwecke
-
+    if ( currentSensorState == STATE_OK )
+    {
       if (toggle_var == true) {
         u8g2.print("UltraSonicTOF: ");
         u8g2.print(duration);
@@ -167,7 +168,8 @@ void loop() {
         u8g2.print("Distanz: ");
         u8g2.print(distance);
         u8g2.print(" cm");
-      } 
+      }
+    }
   } while ( u8g2.nextPage() );
 
   delay(cycle); 

@@ -47,9 +47,19 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18
 
 int percentage_watertank (unsigned int distance) 
 {
-  long percent = ( distance / distance_watertank_100percent );
-  return percent; 
-} 
+  // Schutz vor Werten außerhalb der definierten Tank-Geometrie
+  if (distance >= distance_watertank_0percent) return 0;       // Abstand zu groß -> Tank leer
+  if (distance <= distance_watertank_100percent) return 100;   // Abstand zu klein -> Tank voll
+  
+  // Nutzbarer Bereich (z.B. 140cm - 30cm = 110cm)
+  long nutzbare_hoehe = distance_watertank_0percent - distance_watertank_100percent; 
+  
+  // Aktuelle Wasserhöhe über dem Nullpunkt (z.B. 140cm - 85cm = 55cm)
+  long aktuelle_wasserhoehe = distance_watertank_0percent - distance;               
+  
+  // Erst multiplizieren, dann teilen, um Ganzzahl-Divisionsfehler (0 %) zu vermeiden
+  return (aktuelle_wasserhoehe * 100) / nutzbare_hoehe; 
+}
 
 void setup() {
   Serial.begin(115200);

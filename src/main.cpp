@@ -20,22 +20,24 @@ const unsigned int distance_watertank_100percent = distance_max_depth_watertank 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
 
-const enum SensorState = 
-{
-  0 = "okey"; // all good. Sensor fine?
-  1 = "deadzone (too close)"; // waterlevel is close to sensor. Sensor-Deadzone is 22cm.
-  2 = "deeper than tank depth" // detected depth is deeper then the actual water-tank-depth.
-  3 = "deadzone (too far or Sensor unplugged)" // distanz too far (greater then 2,5 meters). or Sensor fully unplugged. Or Sensor fully covers (not able to send and receive something)
-  4 = "high drift" // too much sensor-drift (open/closing lit or sensor fallen apart)
-  5 = "init" // (restart, no valid measure yet)
+enum SensorState {
+  STATE_OK,                     // Sensor and Distance: all good.
+  STATE_TIMEOUT,                // Sensor could not detect any object. Is Object too far (more than 2,5meters) or Sensor fully Covered and Object laying on the sensor?
+  STATE_DEADZONE,               // Kinda okey. waterlevel is close to sensor. Sensor-Deadzone is <22cm...3cm?.
+  STATE_DRIFT_ERROR,            // too much sensor-drift in short time (did someone opening/closing the lit or did sensor fallen apart)
+  STATE_INIT,                   // (at restart, no valid measure yet)
+  STATE_NEEDS_SERVICE,          // Sensor and System needs manual Service or Reset (unplug power (USB-C-Charger/Powersupply), wait 1 min, replug it. Or Search for further failures, if this did not help)
+  STATE_BELOW_PUMP_RESTART_LEVL,// Usually pump would have started to pump more water in again, but waterlevel is below this level already
 };
+
 
 bool toggle_var = true;
 unsigned long lastTestTriggerTime = 0;
-String SensorTextPrint = ""; // Variable für Textausgabe deklariert
-String SensorStatus = ""; // Variable für SensorStatus deklariert
-float distance_filtered = 0.0; // Globaler Filterwert
-bool is_first_run = true;      // Flag für Erstinitialisierung des Filters
+String SensorTextPrint = "";    // Variable für Textausgabe deklariert
+String SensorStatus = "";       // Variable für SensorStatus deklariert
+float distance_filtered = 0.0;  // Globaler Filterwert
+bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
+// float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
 
@@ -105,9 +107,23 @@ void loop() {
   }
     
   
-    
+  
   // TODOs:
   // Lora aus Chat von Steffen integrieren
+    // Data to send via Lora:
+    // SensorState
+    // WaterTankLevel (or Liters?)
+  // Architektur-Bild zeichnen Sensor -> JSN -> ESP -> ESP -> Cloud? -> Telegramm? bzw. was sagt Steffen dazu?
+  
+  // Wasserstand:
+  // vermutlich ist jetzt das meiste integriert.
+  // Tests (Restart Sender, Restart Empfänger)
+
+  // Wasserverbrauch
+  // Bei eingeschaltener Pumpe UND Ablauf, wird die Differenz bzw. der Verbrauch währenddessen nicht erfasst. Wäre es sinnvoll "bei steigendem Wasserspiegel" den vorherigen Wasserverbrauch zu verlängern?
+  // Kann man die Pumpgeschwindigkeit "eichen" und dann bei geringerer Pumpgeschwindigkeit auf Ablauf Rückschließen?
+    // leider gibt es zwei Pumpen. Eine läuft bei Solar licht verfügbar -> Bohrloch -> kleine Pumpgeschwindigkeit
+    // zweite Pumpe pumpt heftig, ist ein Dieselgenerator.
 
   u8g2.firstPage();
   do {

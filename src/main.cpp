@@ -113,7 +113,7 @@ void loop() {
     }
     currentSensorState = STATE_OK;
     SensorStatus = "OK :-)"; 
-    SensorTextPrint = (distance); // funktioniert das hier? distance is ja float Und SensorTextPrint ein String...?
+    SensorTextPrint = String(distance) + " cm"; // funktioniert das hier? distance is ja float Und SensorTextPrint ein String...?
   } else {
     currentSensorState = STATE_INIT; // Ist doch wie init...
     SensorStatus = " ... starting up";

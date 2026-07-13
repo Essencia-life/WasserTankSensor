@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
 #include <U8g2lib.h>
 
 // Konstanten des ESP-Verkabelung-Ultrasonic-Sensor JSP-SR04T-V33
@@ -19,6 +20,11 @@ const unsigned int distance_watertank_100percent = distance_max_depth_watertank 
 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
+
+// Konstanten der LORA- (Long Range Radio Communication ESP)
+unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
+bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
+unsigned long int waterconsump = 0; // water-consumption not integrated yet
 
 enum SensorState {
   STATE_OK,                     // Sensor and Distance: all good.
@@ -43,6 +49,8 @@ float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm dam
 float watertank_level_percentage = -1.0;        // watertank_percentage
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
+
+unsigned int lora_package_send_ctr = 0; // ctr for respecting LORA frequency
 // float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
@@ -156,6 +164,29 @@ void loop() {
   // Kann man die Pumpgeschwindigkeit "eichen" und dann bei geringerer Pumpgeschwindigkeit auf Ablauf Rückschließen?
     // leider gibt es zwei Pumpen. Eine läuft bei Solar licht verfügbar -> Bohrloch -> kleine Pumpgeschwindigkeit
     // zweite Pumpe pumpt heftig, ist ein Dieselgenerator.
+
+
+  
+  // 2. LORA SENDEN 
+  
+  lora_package_send_ctr++; // increment to get to frequency of lora sending msgs
+  
+  if (lora_package_send_ctr * (cycle/1000) >= lora_send_sek) // optional todo: set internal clock, instead of cycle+programm+delay for "clock"
+    {
+    
+    uint8_t payload[2];
+    payload[0] = (uint8_t)currentSensorState;         // byte 0 = sensorstatus (enum)
+    payload[1] = (uint8_t)watertank_level_percentage; // byte 1 = waterlevel (conversion to int)(to save load)
+
+    int lora_tx_state = radio.transmit(payload, 2);
+    
+    if (lora_tx_state == RADIOLIB_ERR_NONE) {
+      lora_state_is_ok = true;
+    } else {
+      lora_state_is_ok = false;
+    }
+    lora_package_send_ctr = 0; // reset-freq-ctr back to 0
+    }
 
   u8g2.firstPage();
   do {

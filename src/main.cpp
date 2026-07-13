@@ -199,7 +199,7 @@ void loop() {
     u8g2.print(SensorStatus);
     
     u8g2.setCursor(0, 55);
-    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE)
+    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == false)
     {
     toggle_var = !toggle_var; // toggle display with two information
       if (toggle_var == true)

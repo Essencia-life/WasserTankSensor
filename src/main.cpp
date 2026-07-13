@@ -50,8 +50,10 @@ float watertank_level_percentage = -1.0;        // watertank_percentage
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
 
-unsigned int lora_package_send_ctr = 0; // ctr for respecting LORA frequency
-// float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
+unsigned long previousLoRaMillis = 0;           // Speichert den letzten Sendezeitpunkt
+const unsigned long lora_send_interval = 10000; // Sendeintervall in Millisekunden (60s)
+// float acc_usage_today/waterconsumption = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
+// bool waterconsumption_ovrflw = false;        // auch noch to do für irgendwann.
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
 
@@ -167,12 +169,13 @@ void loop() {
 
 
   
-  // 2. LORA SENDEN 
-  
-  lora_package_send_ctr++; // increment to get to frequency of lora sending msgs
-  
-  if (lora_package_send_ctr * (cycle/1000) >= lora_send_sek) // optional todo: set internal clock, instead of cycle+programm+delay for "clock"
-    {
+  // 2.1 LORA zykluszeit abfragen
+  unsigned long currentMillis = millis(); // Aktuelle Systemzeit abfragen
+
+  // 2.2. LORA zyklus-Zeit-Vergangen Prüfen, (ob die Differenz zwischen jetzt und der letzten Sendung größer als das Intervall ist
+  if (currentMillis - previousLoRaMillis >= lora_send_interval) 
+  {
+    previousLoRaMillis = currentMillis;
     
     uint8_t payload[2];
     payload[0] = (uint8_t)currentSensorState;         // byte 0 = sensorstatus (enum)
@@ -184,9 +187,8 @@ void loop() {
       lora_state_is_ok = true;
     } else {
       lora_state_is_ok = false;
-    }
-    lora_package_send_ctr = 0; // reset-freq-ctr back to 0
-    }
+    }  
+  }
 
   u8g2.firstPage();
   do {

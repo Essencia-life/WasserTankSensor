@@ -34,12 +34,13 @@ enum SensorState {
   STATE_OUT_OF_RANGE,           // happens when lit opened, waterlevel seems to be deeper then the tank actually is
 };
 
-
+bool lora_state_is_ok = false; // prepared
 bool toggle_var = true;
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
+float watertank_level_percentage = -1.0;        // watertank_percentage
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
 // float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
@@ -77,7 +78,6 @@ void setup() {
 }
 
 void loop() {
-  toggle_var = !toggle_var;
 
   // 1. MESSUNG (Zuerst ausführen, damit der I2C-Bus nicht stört)
   digitalWrite(trigPin, LOW);
@@ -124,7 +124,8 @@ void loop() {
     }
     currentSensorState = STATE_OK;
     SensorStatus = "OK :-)"; 
-    SensorTextPrint = String(distance) + " cm"; // funktioniert das hier? distance is ja float Und SensorTextPrint ein String...?
+    SensorTextPrint = String(distance) + " cm";
+    watertank_level_percentage = percentage_watertank(distance);
   } else {
     currentSensorState = STATE_INIT; // Ist doch wie init...
     SensorStatus = " ... starting up";
@@ -165,67 +166,64 @@ void loop() {
     u8g2.print(SensorStatus);
     
     u8g2.setCursor(0, 55);
-    if ( currentSensorState == STATE_OK )
+    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE)
     {
-      u8g2.setCursor(0, 55);
-      u8g2.print(SensorTextPrint);
-    } else // switch-case for currentSensorState != OK
-    {
-      switch (err_info_ctr) // 
+    toggle_var = !toggle_var; // toggle display with two information
+      if (toggle_var == true)
       {
-      case 0: // print currentSensorStatus (is some Error)
-        {
+        u8g2.print("Distance: " + String(distance) + " cm");
+      } else {
+        u8g2.print("Water-Level: " + String(watertank_level_percentage) + " %");
+      }
+    } 
+    else // switch-case for currentSensorState != OK
+    {
+      switch (err_info_ctr)
+      {
+        case 0: // print currentSensorStatus (is some Error)
           u8g2.print(SensorStatus);
           err_info_ctr++;
           break;
-        }
-      case 1: // error solve description
-        {
-          u8g2.print(SensorTextPrint);
+
+        case 1: // error solve description
+          u8g2.print(SensorTextPrint); 
           err_info_ctr++;
           break;
-        }
-      case 2: // TOF Sens
-      case 3: // distance Sensed
-      case 4: // theoretically water level percentage
-      case 5: // Lora state
+
+        case 2: // raw-TOF-Wert of sensor
+          u8g2.print("?TOF?: ");
+          u8g2.print(duration);
+          u8g2.print(" us");
+          err_info_ctr++;
+          break;
+
+        case 3: // calculed distance based on TOF:
+          u8g2.print("?Dist?: ");
+          u8g2.print(distance);
+          u8g2.print(" cm");
+          err_info_ctr++;
+          break;
+
+        case 4: // theoreth. waterlevel %
+          
+          u8g2.print(String(watertank_level_percentage) + " %"); // calc waterlevel %
+          err_info_ctr++;
+          break;
+
+        case 5: // LoRa-Status (right now only error or ok)
+          u8g2.print("LoRa is ok: ");
+          u8g2.print(lora_state_is_ok);
+          err_info_ctr = 0; // reset err_info_ctr for start over after this last info
+          break;
+
+        default:
+          err_info_ctr = 0;
+          break;
       }
     }
 
-    
-    u8g2.setCursor(0, 55);
-    toggle_var = false; // für testzwecke
-    if ( currentSensorState == STATE_OK )
-    {
-      u8g2.print("Distanz: ");
-      u8g2.print(distance);
-      u8g2.print(" cm");
-    }
-    else 
-    {
-      if (toggle_var == true) {
-        u8g2.print("UltraSonicTOF?: ");
-        u8g2.print(duration);
-        u8g2.print(" us");
-      } else 
-      {
-        u8g2.print("Distanz?: ");
-        u8g2.print(distance);
-        u8g2.print(" cm");
-      }
-    }
-      if (toggle_var == true) {
-        u8g2.print("UltraSonicTOF: ");
-        u8g2.print(duration);
-        u8g2.print(" us");
-      } else 
-      
-    }
-    else
-    {
-      toggle_var != toggle_var;
-    }
-  } while ( u8g2.nextPage() );
+  }
+  while ( u8g2.nextPage() );
 
   delay(cycle); 
 }

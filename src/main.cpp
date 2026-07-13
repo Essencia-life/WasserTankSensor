@@ -21,7 +21,7 @@ const unsigned int distance_watertank_100percent = distance_max_depth_watertank 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
 
-static bool toggle_var = true; // toggle var for toggeling output of disance and percentage
+bool toggle_var = true; // toggle var for toggeling output of disance and percentage
 
 // Konstanten der LORA- (Long Range Radio Communication ESP)
 unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
@@ -192,6 +192,8 @@ void loop() {
     }  
   }
 
+  toggle_var = !toggle_var; // toggle display with two information distance and percentage
+
   u8g2.firstPage();
   do {
     u8g2.drawStr(0, 12, "Wassertank-Sensor");
@@ -200,8 +202,6 @@ void loop() {
     u8g2.print("STATUS: ");
     u8g2.print(SensorStatus);
     
-    toggle_var = !toggle_var; // toggle display with two information distance and percentage
-
     u8g2.setCursor(0, 55);
     if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {

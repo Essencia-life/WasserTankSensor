@@ -41,6 +41,7 @@ String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
+unsigned int err_info_ctr = 1;
 // float acc_usage_today = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
@@ -162,23 +163,67 @@ void loop() {
     u8g2.setCursor(0, 35);
     u8g2.print("STATUS:");
     u8g2.print(SensorStatus);
+    
     u8g2.setCursor(0, 55);
-    u8g2.print(SensorTextPrint);
+    if ( currentSensorState == STATE_OK )
+    {
+      u8g2.setCursor(0, 55);
+      u8g2.print(SensorTextPrint);
+    } else // switch-case for currentSensorState != OK
+    {
+      switch (err_info_ctr) // 
+      {
+      case 0: // print currentSensorStatus (is some Error)
+        {
+          u8g2.print(SensorStatus);
+          err_info_ctr++;
+          break;
+        }
+      case 1: // error solve description
+        {
+          u8g2.print(SensorTextPrint);
+          err_info_ctr++;
+          break;
+        }
+      case 2: // TOF Sens
+      case 3: // distance Sensed
+      case 4: // theoretically water level percentage
+      case 5: // Lora state
+      }
+    }
 
+    
     u8g2.setCursor(0, 55);
     toggle_var = false; // für testzwecke
     if ( currentSensorState == STATE_OK )
     {
+      u8g2.print("Distanz: ");
+      u8g2.print(distance);
+      u8g2.print(" cm");
+    }
+    else 
+    {
+      if (toggle_var == true) {
+        u8g2.print("UltraSonicTOF?: ");
+        u8g2.print(duration);
+        u8g2.print(" us");
+      } else 
+      {
+        u8g2.print("Distanz?: ");
+        u8g2.print(distance);
+        u8g2.print(" cm");
+      }
+    }
       if (toggle_var == true) {
         u8g2.print("UltraSonicTOF: ");
         u8g2.print(duration);
         u8g2.print(" us");
       } else 
-      {
-        u8g2.print("Distanz: ");
-        u8g2.print(distance);
-        u8g2.print(" cm");
-      }
+      
+    }
+    else
+    {
+      toggle_var != toggle_var;
     }
   } while ( u8g2.nextPage() );
 

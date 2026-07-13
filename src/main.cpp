@@ -13,7 +13,7 @@ const long max_TOF_sens = 30000; // grenze des Sensors (maximale Mess-Reichweite
 
 // Konstanten der Installation in Essencia Wassertank Sensor. Angaben in Zentimeter
 const unsigned int distance_max_depth_watertank = 150; // maximaler, sinnvoller zu messender Wert zwischen Sensor und Tankboden (bzw.) der Wassertank-Tiefe (bis zum Sensor)
-const unsigned int height_watertank_0percent = 10;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
+const unsigned int height_watertank_0percent = 20;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
 const unsigned int height_watertank_100percent = 120; // vom Boden, 120cm (in Essencia) is der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
 const unsigned int distance_watertank_0percent = distance_max_depth_watertank - height_watertank_0percent; // 150 - 10 = 140cm Abstand zum Sensor bei leerem Tank
 const unsigned int distance_watertank_100percent = distance_max_depth_watertank - height_watertank_100percent; // 150 - 120 = 30cm Abstand zum Sensor bei vollem Tank
@@ -21,10 +21,13 @@ const unsigned int distance_watertank_100percent = distance_max_depth_watertank 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
 
+static bool toggle_var = true; // toggle var for toggeling output of disance and percentage
+
 // Konstanten der LORA- (Long Range Radio Communication ESP)
 unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
+
 
 enum SensorState {
   STATE_OK,                     // Sensor and Distance: all good.
@@ -40,8 +43,7 @@ enum SensorState {
   STATE_OUT_OF_RANGE,           // happens when lit opened, waterlevel seems to be deeper then the tank actually is
 };
 
-bool lora_state_is_ok = false; // prepared
-bool toggle_var = true;
+bool lora_state_is_ok = false;  // prepared
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
@@ -133,7 +135,7 @@ void loop() {
       distance_filtered = (distance_filtered * 0.9) + (distance * 0.1);
     }
     currentSensorState = STATE_OK;
-    SensorStatus = "OK :-)"; 
+    SensorStatus = "OK"; 
     SensorTextPrint = String(distance) + " cm";
     watertank_level_percentage = percentage_watertank(distance);
   } else {
@@ -195,13 +197,14 @@ void loop() {
     u8g2.drawStr(0, 12, "Wassertank-Sensor");
     u8g2.drawHLine(0, 16, 128);
     u8g2.setCursor(0, 35);
-    u8g2.print("STATUS:");
+    u8g2.print("STATUS: ");
     u8g2.print(SensorStatus);
     
+    toggle_var = !toggle_var; // toggle display with two information distance and percentage
+
     u8g2.setCursor(0, 55);
-    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == false)
+    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {
-    toggle_var = !toggle_var; // toggle display with two information
       if (toggle_var == true)
       {
         u8g2.print("Distance: " + String(distance) + " cm");

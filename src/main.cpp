@@ -23,6 +23,9 @@ const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(de
 
 bool toggle_var = true; // toggle var for toggeling output of disance and percentage
 
+// Konstanten der ESP-Ausgabe:
+// siehe u8g2.setFont(u8g2_font_6x10_tf); weiter unten im text
+
 // Konstanten der LORA- (Long Range Radio Communication ESP)
 unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
@@ -48,12 +51,12 @@ String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
-float watertank_level_percentage = -1.0;        // watertank_percentage
+int watertank_level_percentage = -1;        // watertank_percentage (-1 init wert == eher unrealistisch bei normalem ablassen, weil das Rohr ja bei 0% ist)
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
 
 unsigned long previousLoRaMillis = 0;           // Speichert den letzten Sendezeitpunkt
-const unsigned long lora_send_interval = 10000; // Sendeintervall in Millisekunden (60s)
+const unsigned long lora_send_interval = 10000; // Sendeintervall in Millisekunden (60s wären ziel-wert für konst-betrieb.)
 // float acc_usage_today/waterconsumption = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
 // bool waterconsumption_ovrflw = false;        // auch noch to do für irgendwann.
 
@@ -72,21 +75,44 @@ int percentage_watertank (unsigned int distance)
   long aktuelle_wasserhoehe = distance_watertank_0percent - distance;               
   
   // Erst multiplizieren, dann teilen, um Ganzzahl-Divisionsfehler (0 %) zu vermeiden
-  return (aktuelle_wasserhoehe * 100) / nutzbare_hoehe; 
+  unsigned int result = ((aktuelle_wasserhoehe * 100) / nutzbare_hoehe ); 
+  return result;
 }
 
 void setup() {
+  
+  // Serial USB serial output baud rate
   Serial.begin(115200);
   
+  // pin Modes of ESP-Controller and PINs
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
 
+  // Setup for built-in-Screen of ESP-Controller
   pinMode(Vext, OUTPUT);
   digitalWrite(Vext, LOW);
   delay(100);
-  
   u8g2.begin();
-  u8g2.setFont(u8g2_font_6x10_tf);
+  u8g2.setFont(u8g2_font_6x10_tf);    // fontsize: 6pix (max. width) + 10pix (max. heigt) for each letter/char
+
+  // LORA Setup
+  int state = radio.begin(868.0); // Startet Modul auf 868 MHz (Europa)
+  if (state == RADIOLIB_ERR_NONE) {
+    radio.setSpreadingFactor(10);
+    radio.setCodingRate(5);
+    radio.setSyncWord(0xE5);      // Dein "Geheimcode", muss beim Empfänger gleich sein
+    // PS: Die 4 LoRa-Filter (Sender & Empfänger)
+    // 1. Frequenz (z. B. 868.0 MHz): Der physikalische Funkkanal. Sender und Empfänger müssen auf derselben Frequenz arbeiten.
+    // 2. Spreading Factor (SF7 bis SF12): Bestimmt die Sendedauer und Signalspreizung. Höherer SF erhöht die Reichweite, senkt aber die Datenrate. Muss exakt übereinstimmen.
+    // 3. Bandbreite (BW) & Coding Rate (CR): Die Breite des Funksignals (meist 125 kHz) und das Maß der Fehlerkorrektur (z. B. 4/5). Ohne Übereinstimmung bleibt das Signal für den Empfänger unlesbares Rauschen.
+    // 4. Sync Word (Die Netzwerk-ID / 0xE5): 0xE5 für E55ENC1A. Ein Byte im Paket-Header. Der Empfänger filtert damit auf Software-Ebene: Passt das Sync Word nicht zu seiner Konfiguration, verwirft er das Paket sofort.
+
+  } else {
+    Serial.print("LoRa-Fehler beim Starten, Code: ");
+    Serial.println(state);
+    lora_state_is_ok = false;
+  }
+  // ---------------------------------------------------
 }
 
 void loop() {
@@ -98,8 +124,8 @@ void loop() {
   delayMicroseconds(20); // mit 18 läufts nicht. mit 20 läufts (board jsn-sr04t empfängt dann den trigger, bei kürzeren Zeiten irgendwie nicht. obwohl 10 reichen sollten, laut doku)
   digitalWrite(trigPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH, max_TOF_sens);
-  long distance = duration * 0.034 / 2;
+  unsigned int duration = pulseIn(echoPin, HIGH, max_TOF_sens);
+  unsigned int distance = duration * 0.034 / 2;
 
   if (distance == 0) {
     // Sensor somehow disconnected? not sensing anymore!
@@ -111,15 +137,16 @@ void loop() {
     currentSensorState = STATE_DEADZONE;
     SensorStatus = "OK (Min. Distance)";
     SensorTextPrint = "dist>22cm. If Tank full,is ok"; 
+    watertank_level_percentage = percentage_watertank(distance_filtered);
   } else if (distance > distance_max_depth_watertank) {
     // if out of distance, too far away, error
     currentSensorState = STATE_OUT_OF_RANGE;
     SensorStatus = "Error (> Max. Distance)";
     SensorTextPrint = "dist. > 150cm"; // SensorTextPrint = "dist. > int2str(distance_max_depth_watertank) cm".
-  } else if ( ( abs( distance/distance_filtered - 1.0 ) > 0.05 ) && (is_first_run == false) ) 
-    {  
-    // Filter for opening Lit to have a look.
-    // max accepted change 5% / cycle
+  } else if ( ( abs( distance-distance_filtered ) > 4 ) && (is_first_run == false) )
+    {
+    // Rate-Filter for opening Lit (to have a look or sth.).
+    // max accepted change 4cm / cycle
     // would it be better to filter this later? on collected data?
     currentSensorState = STATE_DRIFT_ERROR;
     SensorStatus = "Error (high Sens drift)";
@@ -132,26 +159,18 @@ void loop() {
       distance_filtered = distance;
       is_first_run = false;
     } else {
-      distance_filtered = (distance_filtered * 0.9) + (distance * 0.1);
+      distance_filtered = ( (distance_filtered * 0.9) + (distance * 0.1) );
     }
     currentSensorState = STATE_OK;
-    SensorStatus = "OK"; 
-    SensorTextPrint = String(distance) + " cm";
-    watertank_level_percentage = percentage_watertank(distance);
+    SensorStatus = "OK";
+    SensorTextPrint = String(distance_filtered) + " cm";
+    watertank_level_percentage = percentage_watertank(distance_filtered);
   } else {
     currentSensorState = STATE_INIT; // Ist doch wie init...
     SensorStatus = " ... starting up";
     SensorTextPrint = "lit closed? cable conected?";
   }
     
-  
-  
-  // TODOs:
-  // Lora aus Chat von Steffen integrieren
-    // Data to send via Lora:
-      // currentSensorState (Type ENUM SensorState)
-      // WaterTankLevel (or Liters?) ()
-  // Architektur-Bild zeichnen Sensor -> JSN -> ESP -> ESP -> Cloud? -> Telegramm? bzw. was sagt Steffen dazu?
   
   // Wasserstand:
   // vermutlich ist jetzt das meiste integriert.
@@ -182,12 +201,14 @@ void loop() {
     uint8_t payload[2];
     payload[0] = (uint8_t)currentSensorState;         // byte 0 = sensorstatus (enum)
     payload[1] = (uint8_t)watertank_level_percentage; // byte 1 = waterlevel (conversion to int)(to save load)
+                                                      // byte 2 = waterconsumption? (t.b.d.)
+                                                      // byte 3 = waterconsumption_overflow_bit? (t.b.d.)
 
     int lora_tx_state = radio.transmit(payload, 2);
     
     if (lora_tx_state == RADIOLIB_ERR_NONE) {
       lora_state_is_ok = true;
-    } else {
+    } else {    // Antenne war nicht angeschlossen (im Night-Versuch) und dennoch war state_okey... versteh ich nicht.
       lora_state_is_ok = false;
     }  
   }
@@ -197,20 +218,18 @@ void loop() {
   u8g2.firstPage();
   do {
     u8g2.drawStr(0, 12, "Wassertank-Sensor");
-    u8g2.drawHLine(0, 16, 128);
-    u8g2.setCursor(0, 35);
+    u8g2.drawHLine(0, 14, 128);
+    u8g2.setCursor(0, 26);
     u8g2.print("STATUS: ");
     u8g2.print(SensorStatus);
     
-    u8g2.setCursor(0, 55);
+    u8g2.setCursor(0, 55); // (max 64)
     if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {
-      if (toggle_var == true)
-      {
-        u8g2.print("Distance: " + String(distance) + " cm");
-      } else {
+        u8g2.setCursor(0, 38);
+        u8g2.print("Distance: " + String(distance_filtered) + " cm");
+        u8g2.setCursor(0, 50); // (max 64)
         u8g2.print("Water-Level: " + String(watertank_level_percentage) + " %");
-      }
     } 
     else // switch-case for currentSensorState != OK
     {
@@ -234,19 +253,24 @@ void loop() {
           break;
 
         case 3: // calculed distance based on TOF:
-          u8g2.print("?Dist?: ");
+          u8g2.print("?Dist?(unfilt.): ");
           u8g2.print(distance);
           u8g2.print(" cm");
           err_info_ctr++;
           break;
 
-        case 4: // theoreth. waterlevel %
-          
-          u8g2.print(String(watertank_level_percentage) + " %"); // calc waterlevel %
+        case 4: // distance filtered
+          u8g2.print("?Dist?(tpf): ");
+          u8g2.print(distance_filtered);
+          u8g2.print(" cm");
+          break;
+
+        case 5: // theoreth. waterlevel %
+          u8g2.print("percent; " + String(watertank_level_percentage) + " %"); // calc waterlevel %
           err_info_ctr++;
           break;
 
-        case 5: // LoRa-Status (right now only error or ok)
+        case 6: // LoRa-Status (right now only error or ok)
           u8g2.print("LoRa is ok: ");
           u8g2.print(lora_state_is_ok);
           err_info_ctr = 0; // reset err_info_ctr for start over after this last info

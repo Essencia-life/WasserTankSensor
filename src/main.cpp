@@ -263,6 +263,7 @@ void loop() {
           u8g2.print("?Dist?(tpf): ");
           u8g2.print(distance_filtered);
           u8g2.print(" cm");
+          err_info_ctr++;
           break;
 
         case 5: // theoreth. waterlevel %

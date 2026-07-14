@@ -2,6 +2,21 @@
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
 #include <U8g2lib.h>
 
+
+enum SensorState {
+  STATE_OK,                     // Sensor and Distance: all good.
+  STATE_TIMEOUT,                // Sensor could not detect any object. Is Object too far (more than 2,5meters) or Sensor fully Covered and Object laying on the sensor?
+  STATE_DEADZONE,               // Kinda okey. waterlevel is close to sensor. Sensor-Deadzone is <22cm...3cm?.
+  STATE_DRIFT_ERROR,            // too much sensor-drift in short time (did someone opening/closing the lit or did sensor fallen apart)
+  STATE_INIT,                   // (at restart, no valid measure yet)
+  //STATE_NEEDS_SERVICE,          // Sensor and System needs manual Service or Reset (unplug power (USB-C-Charger/Powersupply), wait 1 min, replug it. Or Search for further failures, if this did not help)
+      // NEEDS SERVICE als status obsolet, weil INIT dann aufleuchtet. Und wenn Init mehr als x-Minuten beim Empfänger registriert wird. dann brauchts service. Sonst darf das system sich hier selbst heilen.
+  //STATE_BELOW_PUMP_RESTART_LVL, // Usually pump would have started to pump more water in again, but waterlevel is below this level already
+      // dann gäbe es auch ein "above pump stop level".
+      // und generell wären die dann alle okey. Und irgendwie könnte man die pumprestartlevel vielleicht anderwo hinterlegen?!
+  STATE_OUT_OF_RANGE,           // happens when lit opened, waterlevel seems to be deeper then the tank actually is
+};
+
 // Konstanten des ESP-Verkabelung-Ultrasonic-Sensor JSP-SR04T-V33
 const int echoPin = 5;
 const int trigPin = 4;
@@ -25,6 +40,31 @@ bool toggle_var = true; // toggle var for toggeling output of disance and percen
 
 // Konstanten der ESP-Ausgabe:
 // siehe u8g2.setFont(u8g2_font_6x10_tf); weiter unten im text
+#ifdef IS_RECEIVER
+// --- EMPFÄNGER CONFIG & VARIABLEN (Muss VOR setup() stehen) ---
+volatile bool rxFlag = false;
+uint8_t rx_sensor_state = STATE_INIT;
+int rx_water_level = -1;
+String rx_status_text = "Waiting...";
+
+// Interrupt-Service-Routine bei Paketempfang
+void rxIsr() {
+  rxFlag = true;
+}
+
+// Hilfsfunktion zur Textübersetzung der Stati
+String getStatusText(uint8_t state) {
+  switch(state) {
+    case STATE_OK:            return "OK";
+    case STATE_TIMEOUT:       return "Err (Timeout)";
+    case STATE_DEADZONE:      return "OK (Min. Dist)";
+    case STATE_DRIFT_ERROR:   return "Err (Drift)";
+    case STATE_OUT_OF_RANGE:  return "Err (Out of Range)";
+    default:                  return "Starting...";
+  }
+}
+
+#endif
 
 // Konstanten der LORA- (Long Range Radio Communication ESP)
 unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
@@ -32,19 +72,6 @@ bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumt
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
 
 
-enum SensorState {
-  STATE_OK,                     // Sensor and Distance: all good.
-  STATE_TIMEOUT,                // Sensor could not detect any object. Is Object too far (more than 2,5meters) or Sensor fully Covered and Object laying on the sensor?
-  STATE_DEADZONE,               // Kinda okey. waterlevel is close to sensor. Sensor-Deadzone is <22cm...3cm?.
-  STATE_DRIFT_ERROR,            // too much sensor-drift in short time (did someone opening/closing the lit or did sensor fallen apart)
-  STATE_INIT,                   // (at restart, no valid measure yet)
-  //STATE_NEEDS_SERVICE,          // Sensor and System needs manual Service or Reset (unplug power (USB-C-Charger/Powersupply), wait 1 min, replug it. Or Search for further failures, if this did not help)
-      // NEEDS SERVICE als status obsolet, weil INIT dann aufleuchtet. Und wenn Init mehr als x-Minuten beim Empfänger registriert wird. dann brauchts service. Sonst darf das system sich hier selbst heilen.
-  //STATE_BELOW_PUMP_RESTART_LVL, // Usually pump would have started to pump more water in again, but waterlevel is below this level already
-      // dann gäbe es auch ein "above pump stop level".
-      // und generell wären die dann alle okey. Und irgendwie könnte man die pumprestartlevel vielleicht anderwo hinterlegen?!
-  STATE_OUT_OF_RANGE,           // happens when lit opened, waterlevel seems to be deeper then the tank actually is
-};
 
 bool lora_state_is_ok = false;  // prepared
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
@@ -79,14 +106,24 @@ int percentage_watertank (unsigned int distance)
   return result;
 }
 
+
+
 void setup() {
   
   // Serial USB serial output baud rate
   Serial.begin(115200);
   
-  // pin Modes of ESP-Controller and PINs
+  #ifdef IS_RECEIVER
+  // LORA Empfänger-Teil:
+  radio.setPacketReceivedAction(rxIsr);
+  radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+  #endif
+
+  #ifdef IS_SENDER
+  // pin Modes of ESP-Controller and PINs for JSN-SR04T-Ultrasonic-Sensor-Board
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+  #endif
 
   // Setup for built-in-Screen of ESP-Controller
   pinMode(Vext, OUTPUT);
@@ -112,11 +149,12 @@ void setup() {
     Serial.println(state);
     lora_state_is_ok = false;
   }
-  // ---------------------------------------------------
 }
+
 
 void loop() {
 
+  #ifdef IS_SENDER
   // 1. MESSUNG (Zuerst ausführen, damit der I2C-Bus nicht stört)
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -150,7 +188,7 @@ void loop() {
     // would it be better to filter this later? on collected data?
     currentSensorState = STATE_DRIFT_ERROR;
     SensorStatus = "ERR (high Sens drift)";
-    SensorTextPrint = "Lit Opened?";
+    SensorTextPrint = "Lit Opened? close & reboot";
   } else if ( distance < distance_max_depth_watertank && distance > distance_deadzone ) // Also Sensor innerhalb der normalen, erwarteten Arbeitsbedingungen
     {
     if ( currentSensorState == STATE_INIT ) 
@@ -291,5 +329,50 @@ void loop() {
   while ( u8g2.nextPage() );
 
   err_info_ctr++;
-  delay(cycle); 
+  #endif
+
+  #ifdef IS_RECEIVER
+  // --- EMPFÄNGER LOOP (Nur Status & Waterlevel) ---
+  
+  // 1. Prüfen, ob ein Paket über den Interrupt registriert wurde
+  if (rxFlag) {
+    rxFlag = false;
+    
+    uint8_t payload[2];
+    int state = radio.readData(payload, 2);
+    
+    if (state == RADIOLIB_ERR_NONE) {
+      rx_sensor_state = payload[0];
+      rx_water_level  = payload[1];
+      rx_status_text  = getStatusText(rx_sensor_state);
+    }
+    
+    // Radio wieder in den Empfangsmodus versetzen
+    radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+  }
+
+  // 2. Display aktualisieren
+  u8g2.firstPage();
+  do {
+    u8g2.drawStr(0, 12, "Watertank Level (R)");
+    u8g2.drawHLine(0, 14, 128);
+    
+    // Status-Ausgabe (Zeile 1)
+    u8g2.setCursor(0, 28);
+    u8g2.print("STATUS: ");
+    u8g2.print(rx_status_text);
+    
+    // Wasserstand-Ausgabe (Zeile 2)
+    u8g2.setCursor(0, 40);
+    if (rx_sensor_state == STATE_OK or rx_sensor_state == STATE_DEADZONE)
+    {
+      u8g2.print("Water-Level: " + String(rx_water_level) + " %");
+    } else {
+      u8g2.print("Water-Level: -- %");
+    }
+  } while ( u8g2.nextPage() );
+  #endif
+
+  delay(cycle);
+  
 }

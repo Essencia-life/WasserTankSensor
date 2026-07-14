@@ -130,8 +130,8 @@ void loop() {
   if (distance == 0) {
     // Sensor somehow disconnected? not sensing anymore!
     currentSensorState = STATE_TIMEOUT;
-    SensorStatus = "Error (Timeout)";
-    SensorTextPrint = "Sensor Plugged?";
+    SensorStatus = "ERR (Timeout)";
+    SensorTextPrint = "Sensor disconnected?";
   } else if (distance <= distance_deadzone) {
     // if out of range, dead-zone Sensor (Tank Full?)
     currentSensorState = STATE_DEADZONE;
@@ -141,7 +141,7 @@ void loop() {
   } else if (distance > distance_max_depth_watertank) {
     // if out of distance, too far away, error
     currentSensorState = STATE_OUT_OF_RANGE;
-    SensorStatus = "Error (> Max. Distance)";
+    SensorStatus = "ERR (> Max. Distance)";
     SensorTextPrint = "dist. > 150cm"; // SensorTextPrint = "dist. > int2str(distance_max_depth_watertank) cm".
   } else if ( ( abs( distance-distance_filtered ) > 4 ) && (is_first_run == false) )
     {
@@ -149,7 +149,7 @@ void loop() {
     // max accepted change 4cm / cycle
     // would it be better to filter this later? on collected data?
     currentSensorState = STATE_DRIFT_ERROR;
-    SensorStatus = "Error (high Sens drift)";
+    SensorStatus = "ERR (high Sens drift)";
     SensorTextPrint = "Lit Opened?";
   } else if ( distance < distance_max_depth_watertank && distance > distance_deadzone ) // Also Sensor innerhalb der normalen, erwarteten Arbeitsbedingungen
     {
@@ -223,7 +223,7 @@ void loop() {
     u8g2.print("STATUS: ");
     u8g2.print(SensorStatus);
     
-    u8g2.setCursor(0, 55); // (max 64)
+    //u8g2.setCursor(0, 55); // (max 64)
     if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {
         u8g2.setCursor(0, 38);
@@ -233,42 +233,46 @@ void loop() {
     } 
     else // switch-case for currentSensorState != OK
     {
+      u8g2.setCursor(0, 38);
+      u8g2.print(SensorTextPrint);
+
+      u8g2.setCursor(0, 50);
       switch (err_info_ctr)
       {
         case 0: // print currentSensorStatus (is some Error)
           u8g2.print(SensorStatus);
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 1: // error solve description
           u8g2.print(SensorTextPrint); 
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 2: // raw-TOF-Wert of sensor
           u8g2.print("?TOF?: ");
           u8g2.print(duration);
           u8g2.print(" us");
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 3: // calculed distance based on TOF:
           u8g2.print("?Dist?(unfilt.): ");
           u8g2.print(distance);
           u8g2.print(" cm");
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 4: // distance filtered
           u8g2.print("?Dist?(tpf): ");
           u8g2.print(distance_filtered);
           u8g2.print(" cm");
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 5: // theoreth. waterlevel %
           u8g2.print("percent; " + String(watertank_level_percentage) + " %"); // calc waterlevel %
-          err_info_ctr++;
+          //err_info_ctr++;
           break;
 
         case 6: // LoRa-Status (right now only error or ok)
@@ -282,9 +286,10 @@ void loop() {
           break;
       }
     }
-
+    
   }
   while ( u8g2.nextPage() );
 
+  err_info_ctr++;
   delay(cycle); 
 }

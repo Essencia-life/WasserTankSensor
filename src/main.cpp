@@ -129,12 +129,6 @@ void setup() {
   // ATTENTION // ACHTUNG
   heltec_setup(); // ACHTUNG; NUR AKTIVIEREN, WENN ANTENNEN AN MODUL GEKNÜPFT SIND. SONST DROHT SCHADEN AM CHIP.
 
-  #ifdef IS_RECEIVER
-  // LORA Empfänger-Teil:
-  radio.setPacketReceivedAction(rxIsr);
-  radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
-  #endif
-
   #ifdef IS_SENDER
   // pin Modes of ESP-Controller and PINs for JSN-SR04T-Ultrasonic-Sensor-Board
   pinMode(trigPin, OUTPUT);
@@ -165,6 +159,12 @@ void setup() {
     Serial.println(state);
     lora_state_is_ok = false;
   }
+
+  #ifdef IS_RECEIVER
+  // LORA Empfänger-Teil:
+  radio.setPacketReceivedAction(rxIsr);
+  radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+  #endif
 }
 
 
@@ -398,7 +398,6 @@ void loop() {
 
   #ifdef IS_RECEIVER
   // --- EMPFÄNGER LOOP (Nur Status & Waterlevel) ---
-  
   // 1. Prüfen, ob ein Paket über den Interrupt registriert wurde
   if (rxFlag) {
     rxFlag = false;
@@ -412,9 +411,9 @@ void loop() {
       rx_sensor_state = payload[0];
       rx_water_level  = payload[1];
       rx_status_text  = getStatusText(rx_sensor_state);
-      Serial.println("\nreceived payload 0 %i"), payload[0];
-      Serial.println("\nreceived payload 1 %i"), payload[1];
-      Serial.println("\nso it is rx_status_text = %s"), rx_status_text;
+      Serial.printf("\nreceived payload 0 %i", payload[0]);
+      Serial.printf("\nreceived payload 1 %i", payload[1]);
+      Serial.printf("\nso it is rx_status_text = %s"), rx_status_text;
     }
     
     // Radio wieder in den Empfangsmodus versetzen
@@ -443,13 +442,17 @@ void loop() {
     u8g2.drawStr(0, 12, "Watertank Level (R)");
     u8g2.drawHLine(0, 14, 128);
     
-    // Status-Ausgabe (Zeile 1)
+    // Status-Ausgabe (Info-Zeile 1)
     u8g2.setCursor(0, 28);
-    u8g2.print("STATUS: ");
+    u8g2.print("STATUS Receiver) ");
+    u8g2.print(lora_state_is_ok);
+    // Status-Ausgabe (Info-Zeile 2)
+    u8g2.setCursor(0, 40);
+    u8g2.print("STATUS Watersensor: ");
     u8g2.print(rx_status_text);
     
-    // Wasserstand-Ausgabe (Zeile 2)
-    u8g2.setCursor(0, 40);
+    // Wasserstand-Ausgabe (Info-Zeile 3)
+    u8g2.setCursor(0, 52);
     if (rx_sensor_state == STATE_OK or rx_sensor_state == STATE_DEADZONE)
     {
       u8g2.print("Water-Level: " + String(rx_water_level) + " %");

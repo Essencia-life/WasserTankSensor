@@ -1,8 +1,8 @@
 // FIX 1: Der Modus MUSS ganz oben definiert werden, damit alle nachfolgenden #ifdef-Blöcke synchron greifen.
 // Hier den gewünschten Modus einkommentieren:
-//#define IS_RECEIVER
-#define IS_SENDER
-
+#define IS_RECEIVER
+//#define IS_SENDER
+#define HELTEC_NO_DISPLAY_INSTANCE
 #include <Arduino.h>
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
 #include <U8g2lib.h>
@@ -126,6 +126,9 @@ void setup() {
   // Serial USB serial output baud rate
   Serial.begin(115200);
   
+  // ATTENTION // ACHTUNG
+  heltec_setup(); // ACHTUNG; NUR AKTIVIEREN, WENN ANTENNEN AN MODUL GEKNÜPFT SIND. SONST DROHT SCHADEN AM CHIP.
+
   #ifdef IS_RECEIVER
   // LORA Empfänger-Teil:
   radio.setPacketReceivedAction(rxIsr);
@@ -194,12 +197,12 @@ void loop() {
     {
       distance_acc += distance;
       valid_readings++;
-      delay(50); // WICHTIG: Kurze Pause, damit sich das Ultraschall-Echo im Tank legt
+      delay(200); // WICHTIG: Kurze Pause, damit sich das Ultraschall-Echo im Tank legt
     } 
     else 
     {
       ctr_errors++;
-      delay(10);
+      delay(200);
     }
   }
 
@@ -301,8 +304,8 @@ void loop() {
     } else {    // Antenne war nicht angeschlossen (im Night-Versuch) und dennoch war state_okey... versteh ich nicht.
       lora_state_is_ok = false;
     }  
-    
-    Serial.print("307: Lora payload");
+    Serial.printf("\n306: Lora state: %i", lora_tx_state);
+    Serial.print("\n307: Lora payload:");
     Serial.print(payload[0]);Serial.print(payload[1]);
   }
   
@@ -384,7 +387,7 @@ void loop() {
     u8g2.setCursor(0, 62);
     u8g2.print("D:");
     u8g2.print(distance);
-    u8g2.print("  ---> D(f); ");
+    u8g2.print(" -> D(f); ");
     u8g2.print(distance_filtered);
     
   }
@@ -400,6 +403,8 @@ void loop() {
   if (rxFlag) {
     rxFlag = false;
     
+    Serial.println("Packet detected!");
+
     uint8_t payload[2];
     int state = radio.readData(payload, 2);
     
@@ -407,6 +412,9 @@ void loop() {
       rx_sensor_state = payload[0];
       rx_water_level  = payload[1];
       rx_status_text  = getStatusText(rx_sensor_state);
+      Serial.println("\nreceived payload 0 %i"), payload[0];
+      Serial.println("\nreceived payload 1 %i"), payload[1];
+      Serial.println("\nso it is rx_status_text = %s"), rx_status_text;
     }
     
     // Radio wieder in den Empfangsmodus versetzen

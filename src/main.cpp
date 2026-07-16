@@ -6,7 +6,8 @@
 #include <Arduino.h>
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
 #include <U8g2lib.h>
-
+#include <WiFi.h>
+#include <time.h>
 
 enum SensorState {
   STATE_OK,                     // Sensor and Distance: all good.
@@ -47,6 +48,8 @@ bool toggle_var = true; // toggle var for toggeling output of disance and percen
 // siehe u8g2.setFont(u8g2_font_6x10_tf); weiter unten im text
 #ifdef IS_RECEIVER
 // --- EMPFÄNGER CONFIG & VARIABLEN (Muss VOR setup() stehen) ---
+const char* wifi_ssid = "STARLINK";
+unsigned long last_rx_millis = 0;
 volatile bool rxFlag = false;
 uint8_t rx_sensor_state = STATE_INIT;
 int rx_water_level = -1;
@@ -85,7 +88,10 @@ bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumt
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
 
 
-bool lora_state_is_ok = false;  // prepared
+bool lora_state_is_ok = false;  // Lora state (sender and receiver)
+#ifdef IS_RECEIVER
+bool wifi_and_time_state_is_ok = false;  // wifi state and time from online-server (only receiver-module)
+#endif
 String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
@@ -164,6 +170,33 @@ void setup() {
   // LORA Empfänger-Teil:
   radio.setPacketReceivedAction(rxIsr);
   radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+
+  // und Wifi versuchen zu aktivieren:
+  WiFi.begin(wifi_ssid);
+  int wifi_timeout_ctr = 0;
+  // Versuche WLAN-Verbindung (max. 10 Sekunden)
+  while (WiFi.status() != WL_CONNECTED && wifi_timeout_ctr < 20) {
+    delay(500);
+    wifi_timeout_ctr++;
+  }
+
+  // Wenn WLAN steht, hole die NTP-Zeit
+  if (WiFi.status() == WL_CONNECTED) {
+    configTime(3600, 3600, "pool.ntp.org");
+    
+    struct tm timeinfo;
+    int time_timeout_ctr = 0;
+    // Versuche Zeitsynchronisation (max. 5 Sekunden)
+    while (!getLocalTime(&timeinfo) && time_timeout_ctr < 10) {
+      delay(500);
+      time_timeout_ctr++;
+    }
+
+    // Wenn auch die Zeit erfolgreich geladen wurde
+    if (getLocalTime(&timeinfo)) {
+      wifi_and_time_state_is_ok = true; 
+    }
+  }
   #endif
 }
 
@@ -401,7 +434,7 @@ void loop() {
   // 1. Prüfen, ob ein Paket über den Interrupt registriert wurde
   if (rxFlag) {
     rxFlag = false;
-    
+    last_rx_millis = millis();
     Serial.println("Packet detected!");
 
     uint8_t payload[2];
@@ -413,7 +446,7 @@ void loop() {
       rx_status_text  = getStatusText(rx_sensor_state);
       Serial.printf("\nreceived payload 0 %i", payload[0]);
       Serial.printf("\nreceived payload 1 %i", payload[1]);
-      Serial.printf("\nso it is rx_status_text = %s"), rx_status_text;
+      Serial.printf("\nso it is rx_status_text = %s", rx_status_text);
     }
     
     // Radio wieder in den Empfangsmodus versetzen
@@ -442,15 +475,19 @@ void loop() {
     u8g2.drawStr(0, 12, "Watertank Level (R)");
     u8g2.drawHLine(0, 14, 128);
     
+    int wifi_status = -1;
     // Status-Ausgabe (Info-Zeile 1)
     u8g2.setCursor(0, 28);
-    u8g2.print("STATUS Receiver) ");
+    u8g2.print("STATUS LORA: ");
     u8g2.print(lora_state_is_ok);
+    u8g2.setCursor(70, 28);
+    u8g2.print("WiFi: ");
+    u8g2.print(wifi_status);
     // Status-Ausgabe (Info-Zeile 2)
     u8g2.setCursor(0, 40);
-    u8g2.print("STATUS Watersensor: ");
+    u8g2.print("STATUS Wtr.Sens: ");
     u8g2.print(rx_status_text);
-    
+
     // Wasserstand-Ausgabe (Info-Zeile 3)
     u8g2.setCursor(0, 52);
     if (rx_sensor_state == STATE_OK or rx_sensor_state == STATE_DEADZONE)
@@ -459,7 +496,22 @@ void loop() {
     } else {
       u8g2.print("Water-Level: -- %");
     }
+
+    unsigned long age_seconds = (millis() - last_rx_millis) / 1000;
+
+    u8g2.setCursor(0, 64); // (Info-Zeile 4))
+    u8g2.printf("Age: %lu s", age_seconds);
+
   } while ( u8g2.nextPage() );
+
+
+  // Platzhalter für upload der Werte ins Internet und Co.
+  //***struct tm timeinfo;
+  //if (getLocalTime(&timeinfo)) 
+  //{
+  //u8g2.setCursor(0, 64);
+  //u8g2.printf("Zeit: %02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  //}
   #endif
 
   delay(cycle);

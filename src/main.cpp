@@ -1,3 +1,8 @@
+// FIX 1: Der Modus MUSS ganz oben definiert werden, damit alle nachfolgenden #ifdef-Blöcke synchron greifen.
+// Hier den gewünschten Modus einkommentieren:
+//#define IS_SENDER
+#define IS_RECEIVER
+
 #include <Arduino.h>
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
 #include <U8g2lib.h>
@@ -47,10 +52,18 @@ uint8_t rx_sensor_state = STATE_INIT;
 int rx_water_level = -1;
 String rx_status_text = "Waiting...";
 
-// Interrupt-Service-Routine bei Paketempfang
+// FIX 2: Vorwärtsdeklaration für den Compiler und IRAM_ATTR für die ISR auf ESP32
+#if defined(ESP32)
+void IRAM_ATTR rxIsr();
+void IRAM_ATTR rxIsr() {
+  rxFlag = true;
+}
+#else
+void rxIsr();
 void rxIsr() {
   rxFlag = true;
 }
+#endif
 
 // Hilfsfunktion zur Textübersetzung der Stati
 String getStatusText(uint8_t state) {
@@ -70,7 +83,6 @@ String getStatusText(uint8_t state) {
 unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
-
 
 
 bool lora_state_is_ok = false;  // prepared
@@ -159,7 +171,7 @@ void loop() {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
-  delayMicroseconds(20); // mit 18 läufts nicht. mit 20 läufts (board jsn-sr04t empfängt dann den trigger, bei kürzeren Zeiten irgendwie nicht. obwohl 10 reichen sollten, laut doku)
+  delayMicroseconds(20); // mit 18 läufts nicht. mit 20 läufts (board jsn-sr04t empfängt dann den trigger, bei kürzere Zeiten irgendwie nicht. obwohl 10 reichen sollten, laut doku)
   digitalWrite(trigPin, LOW);
 
   unsigned int duration = pulseIn(echoPin, HIGH, max_TOF_sens);

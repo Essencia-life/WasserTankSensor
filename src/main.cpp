@@ -1,7 +1,7 @@
 // FIX 1: Der Modus MUSS ganz oben definiert werden, damit alle nachfolgenden #ifdef-Blöcke synchron greifen.
 // Hier den gewünschten Modus einkommentieren:
-//#define IS_SENDER
-#define IS_RECEIVER
+//#define IS_RECEIVER
+#define IS_SENDER
 
 #include <Arduino.h>
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
@@ -80,7 +80,7 @@ String getStatusText(uint8_t state) {
 #endif
 
 // Konstanten der LORA- (Long Range Radio Communication ESP)
-unsigned int lora_send_sek = 20;   // lora Sending Frequency (sek) (60 = 1 minute)
+unsigned int lora_send_sek = 10;   // lora Sending Frequency (sek) (60 = 1 minute) (10sek for development)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
 
@@ -91,6 +91,7 @@ String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
 int watertank_level_percentage = -1;        // watertank_percentage (-1 init wert == eher unrealistisch bei normalem ablassen, weil das Rohr ja bei 0% ist)
+// change watertank level to float or sth. which is 45.3% .. because it is toggeling too much. and it makes too much of a difference on 100 steps.
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
 
@@ -149,7 +150,7 @@ void setup() {
   if (state == RADIOLIB_ERR_NONE) {
     radio.setSpreadingFactor(10);
     radio.setCodingRate(5);
-    radio.setSyncWord(0xE5);      // Dein "Geheimcode", muss beim Empfänger gleich sein
+    radio.setSyncWord(0x12);      // Dein "Geheimcode", muss beim Empfänger gleich sein
     // PS: Die 4 LoRa-Filter (Sender & Empfänger)
     // 1. Frequenz (z. B. 868.0 MHz): Der physikalische Funkkanal. Sender und Empfänger müssen auf derselben Frequenz arbeiten.
     // 2. Spreading Factor (SF7 bis SF12): Bestimmt die Sendedauer und Signalspreizung. Höherer SF erhöht die Reichweite, senkt aber die Datenrate. Muss exakt übereinstimmen.
@@ -157,7 +158,7 @@ void setup() {
     // 4. Sync Word (Die Netzwerk-ID / 0xE5): 0xE5 für E55ENC1A. Ein Byte im Paket-Header. Der Empfänger filtert damit auf Software-Ebene: Passt das Sync Word nicht zu seiner Konfiguration, verwirft er das Paket sofort.
 
   } else {
-    Serial.print("LoRa-Fehler beim Starten, Code: ");
+    Serial.print("161: LoRa-Fehler beim Starten, Code: ");
     Serial.println(state);
     lora_state_is_ok = false;
   }
@@ -167,16 +168,54 @@ void setup() {
 void loop() {
 
   #ifdef IS_SENDER
-  // 1. MESSUNG (Zuerst ausführen, damit der I2C-Bus nicht stört)
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(20); // mit 18 läufts nicht. mit 20 läufts (board jsn-sr04t empfängt dann den trigger, bei kürzere Zeiten irgendwie nicht. obwohl 10 reichen sollten, laut doku)
-  digitalWrite(trigPin, LOW);
 
-  unsigned int duration = pulseIn(echoPin, HIGH, max_TOF_sens);
-  unsigned int distance = duration * 0.034 / 2;
+  // Mittelwertbildung über SensorWerte
+  unsigned int valid_readings = 0;
+  unsigned int ctr_errors = 0;
+  float distance_acc = 0; // unsigned long um Überlauf bei der Addition zu vermeiden
+  unsigned int last_duration = 0;
 
+  // Max 10 Versuche, um exakt 5 gültige Messwerte zu sammeln
+  for (int i = 0; i < 10 && valid_readings < 5; i++) 
+  {
+    // 1. MESSUNG 
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(20); 
+    digitalWrite(trigPin, LOW);
+
+    unsigned int duration = pulseIn(echoPin, HIGH, max_TOF_sens);
+    last_duration = duration;
+
+    float distance = duration * 0.034 / 2; 
+    Serial.printf("\n192: Input-Filter run (%i) was distance %f (cm)", i, distance);
+    if (distance != 0)
+    {
+      distance_acc += distance;
+      valid_readings++;
+      delay(50); // WICHTIG: Kurze Pause, damit sich das Ultraschall-Echo im Tank legt
+    } 
+    else 
+    {
+      ctr_errors++;
+      delay(10);
+    }
+  }
+
+  // 2. MITTELWERT BERECHNEN
+  float distance = 0;
+  if (valid_readings > 0) 
+  {
+    distance = distance_acc / valid_readings;
+    Serial.printf("\n213: Distance_mean = %f ", distance);
+  } 
+  else
+  {
+    distance = 0; // Fallback, falls alle 10 Messungen fehlschlugen
+  }
+  
+  Serial.printf("\n220: Distance = %f , distance_filtered %f,", distance, distance_filtered);
   if (distance == 0) {
     // Sensor somehow disconnected? not sensing anymore!
     currentSensorState = STATE_TIMEOUT;
@@ -193,7 +232,7 @@ void loop() {
     currentSensorState = STATE_OUT_OF_RANGE;
     SensorStatus = "ERR (> Max. Distance)";
     SensorTextPrint = "dist. > 150cm"; // SensorTextPrint = "dist. > int2str(distance_max_depth_watertank) cm".
-  } else if ( ( abs( distance-distance_filtered ) > 4 ) && (is_first_run == false) )
+  } else if ( ( abs( distance-distance_filtered ) > 10 ) && (is_first_run == false) )
     {
     // Rate-Filter for opening Lit (to have a look or sth.).
     // max accepted change 4cm / cycle
@@ -209,7 +248,7 @@ void loop() {
       distance_filtered = distance;
       is_first_run = false;
     } else {
-      distance_filtered = ( (distance_filtered * 0.9) + (distance * 0.1) );
+      distance_filtered = ( (distance_filtered * 0.8) + (distance * 0.2) );
     }
     currentSensorState = STATE_OK;
     SensorStatus = "OK";
@@ -221,6 +260,7 @@ void loop() {
     SensorTextPrint = "lit closed? cable conected?";
   }
     
+  Serial.printf("\n265: CurrentSensorState = %i ",currentSensorState);
   
   // Wasserstand:
   // vermutlich ist jetzt das meiste integriert.
@@ -261,13 +301,17 @@ void loop() {
     } else {    // Antenne war nicht angeschlossen (im Night-Versuch) und dennoch war state_okey... versteh ich nicht.
       lora_state_is_ok = false;
     }  
+    
+    Serial.print("307: Lora payload");
+    Serial.print(payload[0]);Serial.print(payload[1]);
   }
+  
 
   toggle_var = !toggle_var; // toggle display with two information distance and percentage
 
   u8g2.firstPage();
   do {
-    u8g2.drawStr(0, 12, "Wassertank-Sensor");
+    u8g2.drawStr(0, 12, "Wassertank-Sensor (S)");
     u8g2.drawHLine(0, 14, 128);
     u8g2.setCursor(0, 26);
     u8g2.print("STATUS: ");
@@ -280,12 +324,13 @@ void loop() {
         u8g2.print("Distance: " + String(distance_filtered) + " cm");
         u8g2.setCursor(0, 50); // (max 64)
         u8g2.print("Water-Level: " + String(watertank_level_percentage) + " %");
+        Serial.printf("\n329: Water-Level %i", watertank_level_percentage);
     } 
     else // switch-case for currentSensorState != OK
     {
       u8g2.setCursor(0, 38);
       u8g2.print(SensorTextPrint);
-
+      Serial.println("335: \n... in Error-printout for display");
       u8g2.setCursor(0, 50);
       switch (err_info_ctr)
       {
@@ -301,7 +346,7 @@ void loop() {
 
         case 2: // raw-TOF-Wert of sensor
           u8g2.print("?TOF?: ");
-          u8g2.print(duration);
+          u8g2.print(last_duration);
           u8g2.print(" us");
           //err_info_ctr++;
           break;
@@ -336,6 +381,11 @@ void loop() {
           break;
       }
     }
+    u8g2.setCursor(0, 62);
+    u8g2.print("D:");
+    u8g2.print(distance);
+    u8g2.print("  ---> D(f); ");
+    u8g2.print(distance_filtered);
     
   }
   while ( u8g2.nextPage() );
@@ -363,7 +413,23 @@ void loop() {
     radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
   }
 
+  // noch zu integrieren. Zeitstempel (aus Internet?)
+  // display: vergangene Zeit (sek) seit letztem empfangenen Wert (oder seit startup)
+  // einbindung ins WLAN.
+  // daten mit Zeitstempel in cloud(? wo genau?) packen? oder was?
+  // water-Consumtion auch beim Empfänger integrieren?
+
   // 2. Display aktualisieren
+
+  // Display-Ausgabe optimieren:
+  // 1. Reihe Infos (ok, not okey)
+  // 2. Reihe Wasserlevel den Tag über verteilt (Kurve)
+  // 3. Reihe Wasserverbrauch / std. Balkendiagramm (akkumuliert heute, vsl. heute, vergl. Wochendurchschnitt.)
+  // (oder ist das eher die Ausgabe für die Webseite/app?)
+  // waterconsumption? (water out?)
+  // water in
+  // put everything in 1 diagramm? (level + water in & out?)  
+  // 128 pix = every 20mins
   u8g2.firstPage();
   do {
     u8g2.drawStr(0, 12, "Watertank Level (R)");

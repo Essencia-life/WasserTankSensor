@@ -9,7 +9,7 @@
 #include <WiFi.h>
 #include <time.h>
 
-enum SensorState {
+enum SensorState {              // JSN-Ultrasonic-Sensor
   STATE_OK,                     // Sensor and Distance: all good.
   STATE_TIMEOUT,                // Sensor could not detect any object. Is Object too far (more than 2,5meters) or Sensor fully Covered and Object laying on the sensor?
   STATE_DEADZONE,               // Kinda okey. waterlevel is close to sensor. Sensor-Deadzone is <22cm...3cm?.
@@ -26,7 +26,7 @@ enum SensorState {
 // Konstanten des ESP-Verkabelung-Ultrasonic-Sensor JSP-SR04T-V33
 const int echoPin = 5;
 const int trigPin = 4;
-const int cycle = 2000; // cycle of sensing waterlevel in milliseconds
+const int cycle = 1000; // cycle of calculations/math of ESP-Boards in milliseconds
 
 // Konstanten des JSP-SR04T-Ultraschall-Sensors
 const unsigned int distance_deadzone = 22;  // Deadzone des Sensors (bei dem Ultraschallsensor von JSN-SR04T ists wohl 22cm)
@@ -44,6 +44,15 @@ const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(de
 
 bool toggle_var = true; // toggle var for toggeling output of disance and percentage
 
+// LORA (Funkverbindung)
+struct LoRaPayload {
+  uint8_t state_watertank_sensor;
+  float waterlevel;
+  // byte = waterconsumption? (t.b.d.)
+  // byte = waterconsumption_overflow_bit? (t.b.d.)
+};
+
+
 // Konstanten der ESP-Ausgabe:
 // siehe u8g2.setFont(u8g2_font_6x10_tf); weiter unten im text
 #ifdef IS_RECEIVER
@@ -52,7 +61,7 @@ const char* wifi_ssid = "STARLINK";
 unsigned long last_rx_millis = 0;
 volatile bool rxFlag = false;
 uint8_t rx_sensor_state = STATE_INIT;
-int rx_water_level = -1;
+float rx_water_level = -1;
 String rx_status_text = "Waiting...";
 
 // FIX 2: Vorwärtsdeklaration für den Compiler und IRAM_ATTR für die ISR auf ESP32
@@ -83,12 +92,12 @@ String getStatusText(uint8_t state) {
 #endif
 
 // Konstanten der LORA- (Long Range Radio Communication ESP)
-unsigned int lora_send_sek = 10;   // lora Sending Frequency (sek) (60 = 1 minute) (10sek for development)
+unsigned int lora_send_sek = 30;   // lora Sending Frequency (sek) (60 = 1 minute) (10sek for development)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
 
 
-bool lora_state_is_ok = false;  // Lora state (sender and receiver)
+bool lora_state_is_ok = true;  // Lora state (sender and receiver)
 #ifdef IS_RECEIVER
 bool wifi_and_time_state_is_ok = false;  // wifi state and time from online-server (only receiver-module)
 #endif
@@ -96,7 +105,7 @@ String SensorTextPrint = "";    // Variable für Textausgabe deklariert
 String SensorStatus = "";       // Variable für SensorStatus deklariert
 SensorState currentSensorState = STATE_INIT;  // Sensorstatus auf Init-State schicken
 float distance_filtered = 50.0;  // Globaler Filterwert, init-wert bei 50 cm damit keine 0Divisionen entstehen
-int watertank_level_percentage = -1;        // watertank_percentage (-1 init wert == eher unrealistisch bei normalem ablassen, weil das Rohr ja bei 0% ist)
+float watertank_level_percentage = -1;        // watertank_percentage (-1 init wert == eher unrealistisch bei normalem ablassen, weil das Rohr ja bei 0% ist)
 // change watertank level to float or sth. which is 45.3% .. because it is toggeling too much. and it makes too much of a difference on 100 steps.
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
@@ -108,7 +117,7 @@ const unsigned long lora_send_interval = 10000; // Sendeintervall in Millisekund
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
 
-int percentage_watertank (unsigned int distance) 
+float percentage_watertank (float distance) 
 {
   // Schutz vor Werten außerhalb der definierten Tank-Geometrie
   if (distance >= distance_watertank_0percent) return 0;       // Abstand zu groß -> Tank leer
@@ -182,7 +191,7 @@ void setup() {
 
   // Wenn WLAN steht, hole die NTP-Zeit
   if (WiFi.status() == WL_CONNECTED) {
-    configTime(3600, 3600, "pool.ntp.org");
+    configTime(0, 3600, "pool.ntp.org");
     
     struct tm timeinfo;
     int time_timeout_ctr = 0;
@@ -324,13 +333,12 @@ void loop() {
   {
     previousLoRaMillis = currentMillis;
     
-    uint8_t payload[2];
-    payload[0] = (uint8_t)currentSensorState;         // byte 0 = sensorstatus (enum)
-    payload[1] = (uint8_t)watertank_level_percentage; // byte 1 = waterlevel (conversion to int)(to save load)
-                                                      // byte 2 = waterconsumption? (t.b.d.)
-                                                      // byte 3 = waterconsumption_overflow_bit? (t.b.d.)
+    LoRaPayload dataOut;
+    dataOut.state_watertank_sensor = currentSensorState;
+    dataOut.waterlevel = watertank_level_percentage; // Dein Float-Wert
 
-    int lora_tx_state = radio.transmit(payload, 2);
+    // Überträgt einfach den Speicherblock der gesamten Struktur (5 Bytes)
+    int lora_tx_state = radio.transmit((uint8_t*)&dataOut, sizeof(dataOut));
     
     if (lora_tx_state == RADIOLIB_ERR_NONE) {
       lora_state_is_ok = true;
@@ -437,20 +445,30 @@ void loop() {
     last_rx_millis = millis();
     Serial.println("Packet detected!");
 
-    uint8_t payload[2];
-    int state = radio.readData(payload, 2);
-    
+    LoRaPayload dataIn;
+    int state = radio.readData((uint8_t*)&dataIn, sizeof(dataIn));
+
     if (state == RADIOLIB_ERR_NONE) {
-      rx_sensor_state = payload[0];
-      rx_water_level  = payload[1];
+      rx_sensor_state = dataIn.state_watertank_sensor;
+      rx_water_level = dataIn.waterlevel; // Ist direkt ein float
+    }
+
+    if (state == RADIOLIB_ERR_NONE) {
+      rx_sensor_state = rx_sensor_state;
       rx_status_text  = getStatusText(rx_sensor_state);
-      Serial.printf("\nreceived payload 0 %i", payload[0]);
-      Serial.printf("\nreceived payload 1 %i", payload[1]);
+      Serial.printf("\nreceived payload int %i", rx_sensor_state);
+      Serial.printf("\nreceived payload float %f", rx_water_level);
       Serial.printf("\nso it is rx_status_text = %s", rx_status_text);
     }
     
     // Radio wieder in den Empfangsmodus versetzen
     radio.startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF);
+
+    if (last_rx_millis > 0 && (millis() - last_rx_millis) > 600000) {
+    lora_state_is_ok = false;
+    rx_status_text = "??";
+    rx_water_level = -1; // Sorgt bei deiner Display-Logik für "-- %"
+}
   }
 
   // noch zu integrieren. Zeitstempel (aus Internet?)
@@ -475,43 +493,53 @@ void loop() {
     u8g2.drawStr(0, 12, "Watertank Level (R)");
     u8g2.drawHLine(0, 14, 128);
     
-    int wifi_status = -1;
     // Status-Ausgabe (Info-Zeile 1)
-    u8g2.setCursor(0, 28);
-    u8g2.print("STATUS LORA: ");
-    u8g2.print(lora_state_is_ok);
-    u8g2.setCursor(70, 28);
-    u8g2.print("WiFi: ");
-    u8g2.print(wifi_status);
-    // Status-Ausgabe (Info-Zeile 2)
-    u8g2.setCursor(0, 40);
+    u8g2.setCursor(0, 25);
     u8g2.print("STATUS Wtr.Sens: ");
     u8g2.print(rx_status_text);
 
+
+    
+    // Status-Ausgabe (Info-Zeile 2)
+    u8g2.setCursor(0, 37);
+    u8g2.print("LORA: ");
+    u8g2.print(lora_state_is_ok? "OK": "Err");
+    u8g2.setCursor(66, 37);
+    u8g2.print("WiFi: ");
+    u8g2.print(wifi_and_time_state_is_ok ? "OK" : "Err");
+
+    u8g2.drawHLine(0, 40, 128);
+
     // Wasserstand-Ausgabe (Info-Zeile 3)
-    u8g2.setCursor(0, 52);
+    u8g2.setCursor(0, 51);
     if (rx_sensor_state == STATE_OK or rx_sensor_state == STATE_DEADZONE)
     {
-      u8g2.print("Water-Level: " + String(rx_water_level) + " %");
+      //u8g2.print("Water-Level:" + String(rx_water_level) + " %");
+      u8g2.printf("Water-Level: %5.1f %%", rx_water_level);
     } else {
-      u8g2.print("Water-Level: -- %");
+      u8g2.print("Water-Level: --- %");
     }
 
     unsigned long age_seconds = (millis() - last_rx_millis) / 1000;
 
-    u8g2.setCursor(0, 64); // (Info-Zeile 4))
-    u8g2.printf("Age: %lu s", age_seconds);
-
+    u8g2.setCursor(48, 61); // (Info-Zeile 4))
+    u8g2.printf("age:  %04lu s", age_seconds);
+    
+    if (wifi_and_time_state_is_ok == true)
+    {
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo)) 
+      {
+      u8g2.setCursor(0,61);
+      u8g2.printf("(%02d:%02d)", timeinfo.tm_hour, timeinfo.tm_min);
+      };
+    }
+    
   } while ( u8g2.nextPage() );
 
 
   // Platzhalter für upload der Werte ins Internet und Co.
-  //***struct tm timeinfo;
-  //if (getLocalTime(&timeinfo)) 
-  //{
-  //u8g2.setCursor(0, 64);
-  //u8g2.printf("Zeit: %02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-  //}
+ 
   #endif
 
   delay(cycle);

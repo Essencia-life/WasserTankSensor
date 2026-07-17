@@ -25,3 +25,5 @@ It could potentially also provide better information, like "consumtion", "compar
 build with plattformio, two #IFDEFINES (IS_RECEIVER, IS_SENDER) and two environments created.
 if you build sw for (S) or (R), take care to chose "environment (sender/receiver)" and "define IS_SENDER / IS_RECEIVER" before klicking "build and flash" (->)
 <img width="866" height="398" alt="Bildschirmfoto 2026-07-17 um 17 08 42" src="https://github.com/user-attachments/assets/72fe7bc0-0625-456b-9df8-0bd6ac3ff305" />
+
+install the "libs" from platformio.ini (heltec, arduino, etc..) for building the project, if not done yet.

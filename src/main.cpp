@@ -366,7 +366,7 @@ void loop() {
     if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {
         u8g2.setCursor(0, 38);
-        u8g2.printf("Distance: %7.3f cm", distance_filtered);
+        u8g2.printf("Distance: %6.2f cm", distance_filtered);
         u8g2.setCursor(0, 50); // (max 64)
         u8g2.printf("Water-Level: %5.1f %%", watertank_level_percentage);
         Serial.printf("\n329: Water-Level %f", watertank_level_percentage);

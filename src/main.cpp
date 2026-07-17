@@ -9,6 +9,35 @@
 #include <WiFi.h>
 #include <time.h>
 
+// OPEN might-ToDos:
+//
+// Sender:
+//    S.1 rms/better mean-average at Ultrasonic-Sensor-value
+//        - currently it is a 5-valid-measures-out-of-10. and the mean of these.
+//        - because, ususally sensor returns distance like 83.72, 83.71, 84.01, 84.05, 83.81"
+//        - but sometimes also like:  83.72, 69.81, 84.01, 84.05, 83.81"  (so one "Ausreisser" (69,81) is far away from the other values. One value far apart)
+//    S.2 water-consumption on waterlevel
+//        - there is consumption (unpredictable)
+//        - there is two pumps (quite predictable)
+//          - one is constantly pouring water (if there is sun) at... xl/hrs
+//          - the other is pumping each 30mins water, for max 5 mins.
+//        - this two inputs and "one"/or multiple outputs could be used as source for "waterconsumption"
+// Receiver:
+//    R.1 upload values to server:
+//        - needs server (from Ben?)
+//    R.2 store values on ESP, if Server-Unavailable?
+//        - store as much as usefull? then dump when server is back online?
+//
+// Server:
+//    Serv.1 install a server which is storing data.
+//    Serv.2 create averages / comparisions / graphs for display-options
+//    Serv.3 provide this "display" views to everybodys-phone.
+//
+// IDEA: What about getting just an other ESP32 with LORA-Antenna, 
+// putting the Same Receiver-SW (may disable wifi) on it, and just put it e.g. in the Fun-Kitchen?
+// would be easier to just read the waterlevel via display. no phone / internet / server needed.
+
+
 enum SensorState {              // JSN-Ultrasonic-Sensor
   STATE_OK,                     // Sensor and Distance: all good.
   STATE_TIMEOUT,                // Sensor could not detect any object. Is Object too far (more than 2,5meters) or Sensor fully Covered and Object laying on the sensor?
@@ -92,9 +121,12 @@ String getStatusText(uint8_t state) {
 #endif
 
 // Konstanten der LORA- (Long Range Radio Communication ESP)
-unsigned int lora_send_sek = 30;   // lora Sending Frequency (sek) (60 = 1 minute) (10sek for development)
 bool lora_send_waterconsump_ovrflw = false; // overflow-counter for waterconsumtion (integration t.b.d) just needed for reset and receiver-logic.
 unsigned long int waterconsump = 0; // water-consumption not integrated yet
+unsigned long previousLoRaMillis = 0;           // Speichert den letzten Sendezeitpunkt
+const unsigned long lora_send_interval = 30000; // Sendeintervall in Millisekunden (60s wären ziel-wert für konst-betrieb.)
+// float acc_usage_today/waterconsumption = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
+// bool waterconsumption_ovrflw = false;        // auch noch to do für irgendwann.
 
 
 bool lora_state_is_ok = true;  // Lora state (sender and receiver)
@@ -110,10 +142,6 @@ float watertank_level_percentage = -1;        // watertank_percentage (-1 init w
 bool is_first_run = true;       // Flag für Erstinitialisierung des Filters
 unsigned int err_info_ctr = 1;
 
-unsigned long previousLoRaMillis = 0;           // Speichert den letzten Sendezeitpunkt
-const unsigned long lora_send_interval = 10000; // Sendeintervall in Millisekunden (60s wären ziel-wert für konst-betrieb.)
-// float acc_usage_today/waterconsumption = 0;      // Auffaddierter Verbrauch / Tag -> bräuchte Uhrzeit. Und will ich den verbrauch hier addieren?
-// bool waterconsumption_ovrflw = false;        // auch noch to do für irgendwann.
 
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 21, /* clock=*/ 18, /* data=*/ 17);
 
@@ -543,6 +571,15 @@ void loop() {
 
 
   // Platzhalter für upload der Werte ins Internet und Co.
+  // mit Ben bespreochen:
+  //  er schickt nen Server/Adresse.
+  //  er kann auch eine konfig zur verfügung stellen /bzgl. Zeit usw)
+  //  Er erwartet ein .json
+  //  darin:
+  //  SensorStatus
+  //  WaterLevel (in&)
+  //  timestamp (received value)
+
  
   #endif
 

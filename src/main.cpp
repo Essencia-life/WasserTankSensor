@@ -35,9 +35,9 @@ const long max_TOF_sens = 30000; // grenze des Sensors (maximale Mess-Reichweite
 // Konstanten der Installation in Essencia Wassertank Sensor. Angaben in Zentimeter
 const unsigned int distance_max_depth_watertank = 150; // maximaler, sinnvoller zu messender Wert zwischen Sensor und Tankboden (bzw.) der Wassertank-Tiefe (bis zum Sensor)
 const unsigned int height_watertank_0percent = 20;  // bei 10cm (in Essencia) fängt das Wasserrohr an, darunterliegende Wasserstände können nicht gepumpt werden.
-const unsigned int height_watertank_100percent = 120; // vom Boden, 120cm (in Essencia) is der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
+const unsigned int height_watertank_100percent = 114; // vom Boden, 120cm (in Essencia) is der Wassertank mit 100% voll betitelt. da der Sensor jedoch 22cm Deadzone hat, ist das mal hier so früh auf 100% definiert. Man müsste den Sensor höher montieren (wie chatgpt/gemini schon gesagt hatte)
 const unsigned int distance_watertank_0percent = distance_max_depth_watertank - height_watertank_0percent; // 150 - 10 = 140cm Abstand zum Sensor bei leerem Tank
-const unsigned int distance_watertank_100percent = distance_max_depth_watertank - height_watertank_100percent; // 150 - 120 = 30cm Abstand zum Sensor bei vollem Tank
+const unsigned int distance_watertank_100percent = distance_max_depth_watertank - height_watertank_100percent; // 150 - 114 = 36cm Abstand zum Sensor bei vollem Tank
 
 const unsigned int liter_per_cm = 125; // Liter Inhalt pro centimeter: Pi*R*R(dezimeter)*1/10
                                // in Essencia ausmessen! aktuelle Schätzung: 20*20*3,14159/10 = 125
@@ -358,12 +358,15 @@ void loop() {
   do {
     u8g2.drawStr(0, 12, "Wassertank-Sensor (S)");
     u8g2.drawHLine(0, 14, 128);
+    u8g2.setCursor(72, 26);
+    u8g2.print("LORA: ");
+    u8g2.print(lora_state_is_ok ? "OK" : "Err");
     u8g2.setCursor(0, 26);
     u8g2.print("STATUS: ");
     u8g2.print(SensorStatus);
     
     //u8g2.setCursor(0, 55); // (max 64)
-    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
+    if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE)
     {
         u8g2.setCursor(0, 38);
         u8g2.printf("Distance: %6.2f cm", distance_filtered);
@@ -429,7 +432,7 @@ void loop() {
     u8g2.setCursor(0, 62);
     u8g2.print("D:");
     u8g2.print(distance);
-    u8g2.print(" -> D(f); ");
+    u8g2.print(" ->D(f); ");
     u8g2.print(distance_filtered);
     
   }

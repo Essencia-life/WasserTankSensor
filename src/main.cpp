@@ -1,7 +1,7 @@
 // FIX 1: Der Modus MUSS ganz oben definiert werden, damit alle nachfolgenden #ifdef-Blöcke synchron greifen.
 // Hier den gewünschten Modus einkommentieren:
-#define IS_RECEIVER
-//#define IS_SENDER
+//#define IS_RECEIVER
+#define IS_SENDER
 #define HELTEC_NO_DISPLAY_INSTANCE
 #include <Arduino.h>
 #include <heltec_unofficial.h> // Ersetzt Arduino.h, bringt u8g2 und radio mit
@@ -127,10 +127,10 @@ float percentage_watertank (float distance)
   long nutzbare_hoehe = distance_watertank_0percent - distance_watertank_100percent; 
   
   // Aktuelle Wasserhöhe über dem Nullpunkt (z.B. 140cm - 85cm = 55cm)
-  long aktuelle_wasserhoehe = distance_watertank_0percent - distance;               
+  float aktuelle_wasserhoehe = distance_watertank_0percent - distance;               
   
   // Erst multiplizieren, dann teilen, um Ganzzahl-Divisionsfehler (0 %) zu vermeiden
-  unsigned int result = ((aktuelle_wasserhoehe * 100) / nutzbare_hoehe ); 
+  float result = ((aktuelle_wasserhoehe * 100) / nutzbare_hoehe ); 
   return result;
 }
 
@@ -347,7 +347,8 @@ void loop() {
     }  
     Serial.printf("\n306: Lora state: %i", lora_tx_state);
     Serial.print("\n307: Lora payload:");
-    Serial.print(payload[0]);Serial.print(payload[1]);
+    Serial.print(dataOut.state_watertank_sensor);
+    Serial.print(dataOut.waterlevel);
   }
   
 
@@ -365,10 +366,10 @@ void loop() {
     if (currentSensorState == STATE_OK or currentSensorState == STATE_DEADZONE or lora_state_is_ok == true)
     {
         u8g2.setCursor(0, 38);
-        u8g2.print("Distance: " + String(distance_filtered) + " cm");
+        u8g2.printf("Distance: %7.3f cm", distance_filtered);
         u8g2.setCursor(0, 50); // (max 64)
-        u8g2.print("Water-Level: " + String(watertank_level_percentage) + " %");
-        Serial.printf("\n329: Water-Level %i", watertank_level_percentage);
+        u8g2.printf("Water-Level: %5.1f %%", watertank_level_percentage);
+        Serial.printf("\n329: Water-Level %f", watertank_level_percentage);
     } 
     else // switch-case for currentSensorState != OK
     {
